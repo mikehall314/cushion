@@ -80,6 +80,12 @@ export class Cushion {
     // Generate ID if not provided
     const id = doc._id || crypto.randomUUID();
 
+    // If the document includes a _rev, we should reject it, since insert is
+    // only for new documents.
+    if (Object.hasOwn(doc, "_rev")) {
+      throw new Error("Document must not include _rev");
+    }
+
     const key = getDocumentKey(this.#namespace, id);
     const initialiser = { ...doc, _id: id };
 
@@ -111,7 +117,11 @@ export class Cushion {
     doc: T,
   ): Promise<InsertResult> {
     const key = getDocumentKey(this.#namespace, id);
-    const updated: StoredDocument = { ...doc, _id: id };
+
+    // Ensure the document includes the _id and omits the _rev,
+    // which is stored as the versionstamp in Deno KV.
+    const { _rev, ...rest } = doc;
+    const updated: StoredDocument = { ...rest, _id: id };
 
     // Update the document only if the rev matches
     const result = await this.#kv.atomic()
