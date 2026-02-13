@@ -29,6 +29,21 @@ type ViewRow = { value: unknown; doc: StoredDocument };
 
 type InsertResult = { ok: boolean; id: string; rev: string };
 
+export type MapRow<
+  TValue = unknown,
+  TDoc extends StoredDocument = StoredDocument,
+> = {
+  key: Deno.KvKeyPart[];
+  id: string;
+  value: TValue;
+  doc?: TDoc;
+};
+
+export type ReduceRow<TValue = unknown> = {
+  key: Deno.KvKeyPart[] | null;
+  value: TValue;
+};
+
 export class Cushion {
   #kv: Deno.Kv;
   #namespace: string;
@@ -320,7 +335,9 @@ export class Cushion {
     }
   }
 
-  async *query(viewQuery: ViewQuery): AsyncGenerator<unknown> {
+  async *query<T = MapRow | ReduceRow>(
+    viewQuery: ViewQuery,
+  ): AsyncGenerator<T> {
     const { viewName, ...params } = viewQuery.getParams();
 
     // Check the view exists
@@ -379,10 +396,11 @@ export class Cushion {
 
     // Handle reduce case
     if (params.reduce && viewDef.reduce) {
-      yield* this.#queryReduce(entries, viewDef.reduce, {
-        viewName,
-        ...params,
-      });
+      yield* this.#queryReduce<T>(
+        entries,
+        viewDef.reduce,
+        { viewName, ...params },
+      );
       return;
     }
 
@@ -401,15 +419,15 @@ export class Cushion {
         id: entry.key.at(-1) as string,
         value,
         ...(params.includeDocs ? { doc } : {}),
-      };
+      } as T;
     }
   }
 
-  async *#queryReduce(
+  async *#queryReduce<T = ReduceRow>(
     entries: AsyncIterable<Deno.KvEntry<ViewRow>>,
     reduceFn: ReduceFunction,
     params: ReturnType<ViewQuery["getParams"]>,
-  ): AsyncGenerator<unknown> {
+  ): AsyncGenerator<T> {
     const viewPrefix = getViewKey(this.#namespace, params.viewName);
     const prefixLen = viewPrefix.length;
     const groupLevel = "groupLevel" in params ? params.groupLevel : undefined;
@@ -451,7 +469,7 @@ export class Cushion {
       yield {
         key: groupKey === "ALL" ? null : JSON.parse(groupKey),
         value: result,
-      };
+      } as T;
 
       yielded += 1;
     }
