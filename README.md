@@ -64,7 +64,7 @@ with a map function (and optional reduce), and Cushion builds and maintains the
 index automatically.
 
 ```ts
-import { ViewQuery } from "./mod.ts";
+import { ViewQuery, type MapRow } from "./mod.ts";
 
 // Define a view
 await db.defineView("by-dept", (doc, emit) => {
@@ -76,7 +76,7 @@ await db.defineView("by-dept", (doc, emit) => {
 
 // Query it
 const query = ViewQuery.for("by-dept");
-for await (const row of db.query(query)) {
+for await (const row of db.query<MapRow<string>>(query)) {
   console.log(row.key, row.id, row.value);
 }
 ```
@@ -115,6 +115,8 @@ await db.defineView("ages", (doc, emit) => {
 Add a reduce function to aggregate results:
 
 ```ts
+import type { ReduceRow } from "./mod.ts";
+
 await db.defineView("count-by-dept", (doc, emit) => {
   if (doc.type !== "user") {
     return;
@@ -124,12 +126,12 @@ await db.defineView("count-by-dept", (doc, emit) => {
 
 // Total count
 const query = ViewQuery.for("count-by-dept").reduce();
-for await (const row of db.query(query)) {
+for await (const row of db.query<ReduceRow<number>>(query)) {
   console.log(row.value); // 10
 }
 
 // Count per department
-for await (const row of db.query(query.group())) {
+for await (const row of db.query<ReduceRow<number>>(query.group())) {
   console.log(row.key, row.value); // ["engineering"] 4
 }
 ```
