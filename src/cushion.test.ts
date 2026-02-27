@@ -5,7 +5,7 @@ import {
   assertNotEquals,
   assertObjectMatch,
   assertRejects,
-} from "assert";
+} from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "bdd";
 import { Cushion } from "./cushion.ts";
 import { ViewQuery } from "./view-query.ts";

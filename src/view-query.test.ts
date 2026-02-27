@@ -1,4 +1,4 @@
-import { assertObjectMatch, assertThrows } from "assert";
+import { assertObjectMatch, assertThrows } from "@std/assert";
 import { describe, it } from "bdd";
 import { ViewQuery } from "./view-query.ts";
 
