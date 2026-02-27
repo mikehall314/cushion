@@ -38,7 +38,7 @@ await db.remove(id, result.rev);
 
 ## Documents
 
-Documents are plain objects. If you don't provide an `_id`, one will be 
+Documents are plain objects. If you don't provide an `_id`, one will be
 generated for you. Revisions (`_rev`) are managed automatically using Deno KV's
 versionstamp, giving you optimistic concurrency control for free.
 
@@ -54,17 +54,17 @@ const doc = await db.get("post-1");
 await db.replace(doc._id, doc._rev, { ...doc, title: "Updated" });
 ```
 
-If someone else modifies a document between your read and write, the replace 
+If someone else modifies a document between your read and write, the replace
 will fail with a revision conflict error.
 
 ## Views
 
-Views are materialised map-reduce indexes, inspired by CouchDB. Define a view 
+Views are materialised map-reduce indexes, inspired by CouchDB. Define a view
 with a map function (and optional reduce), and Cushion builds and maintains the
 index automatically.
 
 ```ts
-import { ViewQuery, type MapRow } from "./mod.ts";
+import { type MapRow, ViewQuery } from "./mod.ts";
 
 // Define a view
 await db.defineView("by-dept", (doc, emit) => {
@@ -106,7 +106,7 @@ await db.defineView("ages", (doc, emit) => {
   if (doc.type !== "user") {
     return;
   }
-  emit(doc.name, doc.age);  
+  emit(doc.name, doc.age);
 });
 ```
 
@@ -146,44 +146,45 @@ Use `group(n)` with compound keys to group at a specific level.
 
 ```ts
 // Full scan
-ViewQuery.for("by-name")
+ViewQuery.for("by-name");
 
 // Single key
-ViewQuery.for("by-name").key("Alice")
+ViewQuery.for("by-name").key("Alice");
 
 // Prefix match (useful with compound keys)
-ViewQuery.for("by-dept-name").prefix(["engineering"])
+ViewQuery.for("by-dept-name").prefix(["engineering"]);
 
 // Range (start inclusive, end exclusive)
-ViewQuery.for("by-name").range(["Bob"], ["Eve"])
+ViewQuery.for("by-name").range(["Bob"], ["Eve"]);
 ```
 
 ### Options
 
 ```ts
 // Limit and skip. Skip is expensive, use only for small values.
-ViewQuery.for("by-name").limit(10).skip(20)
+ViewQuery.for("by-name").limit(10).skip(20);
 
 // Descending order
-ViewQuery.for("by-name").order(ViewQuery.DESCENDING)
+ViewQuery.for("by-name").order(ViewQuery.DESCENDING);
 
 // Include full documents in results
-ViewQuery.for("by-name").includeDocs()
+ViewQuery.for("by-name").includeDocs();
 
 // Reduce with grouping
-ViewQuery.for("count-by-dept").reduce().group(true)
-ViewQuery.for("by-dept-name").reduce().group(1) // group by first key part
+ViewQuery.for("count-by-dept").reduce().group(true);
+ViewQuery.for("by-dept-name").reduce().group(1); // group by first key part
 ```
 
 ### Cursor-based pagination
 
-Use `idRange` with `skip(1)` for pagination through rows that share the same key:
+Use `idRange` with `skip(1)` for pagination through rows that share the same
+key:
 
 ```ts
 // Page 1
 const query = ViewQuery.for("by-dept")
-    .range(["engineering"], ["engineering\xff"])
-    .limit(10);
+  .range(["engineering"], ["engineering\xff"])
+  .limit(10);
 
 const page1 = [];
 for await (const row of db.query(query)) {

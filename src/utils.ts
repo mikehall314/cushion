@@ -10,12 +10,16 @@ export const getDocumentKey = (namespace: string, id: string) => {
   return [...getDocPrefix(namespace), id] as const satisfies Deno.KvKey;
 };
 
-export const getDesignKey = (namespace: string, id: string) => {
-  return [namespace, "design", id] as const satisfies Deno.KvKey;
+export const getDesignKey = (namespace: string, signature: string) => {
+  return [namespace, "design", signature] as const satisfies Deno.KvKey;
 };
 
-export const getViewKey = (namespace: string, viewName: string) => {
-  return [namespace, "view", viewName] as const satisfies Deno.KvKey;
+export const getViewKey = (
+  namespace: string,
+  viewName: string,
+  signature: string,
+) => {
+  return [namespace, "view", viewName, signature] as const satisfies Deno.KvKey;
 };
 
 export const getViewRefKey = (

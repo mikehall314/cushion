@@ -1,9 +1,10 @@
 /**
- * Cushion - CouchDB-inspirted API on top of Deno KV
+ * Cushion - CouchDB-inspired API on top of Deno KV
  */
 
 import type { ViewQuery } from "./view-query.ts";
-import { encodeHex } from "jsr:@std/encoding/hex";
+import { encodeHex } from "hex";
+import { batchedAtomic } from "batched-atomic";
 import {
   getDesignKey,
   getDocPrefix,
@@ -23,7 +24,11 @@ type ViewEmitter = (key: ViewEmitKey, value?: unknown) => void;
 type MapFunction = (doc: StoredDocument, emit: ViewEmitter) => void;
 // deno-lint-ignore no-explicit-any
 type ReduceFunction = (keys: Deno.KvKeyPart[][], values: any[]) => unknown;
-type ViewLogic = { map: MapFunction; reduce?: ReduceFunction };
+type ViewLogic = {
+  map: MapFunction;
+  reduce?: ReduceFunction;
+  signature: string;
+};
 type ViewState = { signature: string; state: "building" | "ready" };
 type ViewRow = { value: unknown; doc: StoredDocument };
 
@@ -114,7 +119,7 @@ export class Cushion {
       throw new Error(`Document ${id} already exists; use replace()`);
     }
 
-    await this.updateViewsForDoc(id, {
+    await this.#updateViewsForDoc(id, {
       ...initialiser,
       _rev: result.versionstamp,
     });
@@ -150,7 +155,10 @@ export class Cushion {
       );
     }
 
-    await this.updateViewsForDoc(id, { ...updated, _rev: result.versionstamp });
+    await this.#updateViewsForDoc(id, {
+      ...updated,
+      _rev: result.versionstamp,
+    });
 
     return { ok: true, id, rev: result.versionstamp };
   }
@@ -173,7 +181,7 @@ export class Cushion {
       );
     }
 
-    await this.updateViewsForDoc(id, null);
+    await this.#updateViewsForDoc(id, null);
 
     return { ok: true };
   }
@@ -192,135 +200,94 @@ export class Cushion {
    */
   async defineView(
     viewName: string,
-    mapper: MapFunction,
-    reducer?: ReduceFunction,
+    map: MapFunction,
+    reduce?: ReduceFunction,
   ): Promise<void> {
     // Store the map-reduce logic so we can do incremental updates later
-    this.#views.set(viewName, { map: mapper, reduce: reducer });
+    const signature = await this.#hashFunction(map);
+    this.#views.set(viewName, { map, reduce, signature });
 
-    // This could be a new map function, in which case we need to build it. Or
-    // it could have been modified since we last saw it, in which case we need
-    // to rebuild it.
-    const viewSignature = await this.#hashFunction(mapper);
-    const design = getDesignKey(this.#namespace, viewName);
-
+    // If this view is already indexed/being indexed, we dont need to repeat it.
+    const design = getDesignKey(this.#namespace, signature);
     const { value } = await this.#kv.get<ViewState>(design);
-
-    // If the signature is up to date, we don't need to do anything
-    if (value?.signature === viewSignature) {
+    if (value?.signature === signature) {
       return;
     }
 
-    // If the view is already being built, we don't need to do anything
-    if (value?.state === "building") {
-      return;
-    }
-
-    // Otherwise, kick off a rebuild
-    await this.rebuildView(viewName, mapper, viewSignature);
+    // Otherwise, start a build
+    await this.#rebuildView(viewName, map, signature);
   }
 
-  private async rebuildView(
+  async #rebuildView(
     viewName: string,
-    mapper: MapFunction,
+    map: MapFunction,
     signature: string,
   ): Promise<void> {
-    const BATCH_SIZE = 1_000;
+    // We are building this view
+    const design = getDesignKey(this.#namespace, signature);
+    await this.#kv.set(
+      design,
+      { signature, state: "building" } satisfies ViewState,
+    );
 
-    // Delete all existing view entries using batched atomic deletes
-    const viewPrefix = getViewKey(this.#namespace, viewName);
+    const atomic = batchedAtomic(this.#kv);
+
+    // Remove the old view data
     const viewRefPrefix = getViewRefPrefix(this.#namespace, viewName);
-
-    let deleteCount = 0;
-    let deleteAtomic = this.#kv.atomic();
-
+    const viewPrefix = getViewKey(this.#namespace, viewName, signature);
     for (const prefix of [viewPrefix, viewRefPrefix]) {
       for await (const entry of this.#kv.list({ prefix })) {
-        deleteAtomic.delete(entry.key);
-        deleteCount += 1;
-
-        if (deleteCount >= BATCH_SIZE) {
-          await deleteAtomic.commit();
-          deleteAtomic = this.#kv.atomic();
-          deleteCount = 0;
-        }
+        atomic.delete(entry.key);
       }
     }
 
-    if (deleteCount > 0) {
-      await deleteAtomic.commit();
-    }
-
-    // Load all the documents and run the map function over them
-    const docPrefix = getDocPrefix(this.#namespace);
-    const docs = this.#kv.list<Document>({ prefix: docPrefix });
-
-    let batch = this.#kv.atomic();
-    let batchSize = 0;
-
+    // Map over all the documents in the database and emit new view entries
+    const prefix = getDocPrefix(this.#namespace);
+    const docs = this.#kv.list<Document>({ prefix });
     for await (const { value: doc } of docs) {
-      const emittedKeys: Deno.KvKey[] = [];
+      const refs: Deno.KvKey[] = [];
 
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
         const viewKey = [...viewPrefix, ...keyParts, doc._id];
-        emittedKeys.push(viewKey);
-        batch.set(viewKey, { value: value ?? null, doc });
-        batchSize += 1;
+        refs.push(viewKey);
+        atomic.set(viewKey, { value: value ?? null });
       };
 
-      mapper(doc, emit);
+      map(doc, emit);
 
       const refKey = getViewRefKey(this.#namespace, viewName, doc._id);
-      batch.set(refKey, emittedKeys);
-      batchSize += 1;
-
-      if (batchSize >= BATCH_SIZE) {
-        await batch.commit();
-        batch = this.#kv.atomic();
-        batchSize = 0;
-      }
-    }
-
-    if (batchSize > 0) {
-      await batch.commit();
+      atomic.set(refKey, refs);
     }
 
     // Mark the view as ready
-    const designKey = getDesignKey(this.#namespace, viewName);
-    await this.#kv.set(
-      designKey,
-      { signature, state: "ready" } satisfies ViewState,
-    );
+    const designKey = getDesignKey(this.#namespace, signature);
+    atomic.set(designKey, { signature, state: "ready" } satisfies ViewState);
+
+    await atomic.commit();
   }
 
-  private async updateViewsForDoc(
-    docId: string,
-    doc: Document | null,
-  ): Promise<void> {
-    for (const [viewName, { map: mapper }] of this.#views) {
-      const viewPrefix = getViewKey(this.#namespace, viewName);
+  async #updateViewsForDoc(docId: string, doc: Document | null): Promise<void> {
+    const atomic = batchedAtomic(this.#kv);
+
+    for (const [viewName, { map, signature }] of this.#views) {
       const refKey = getViewRefKey(this.#namespace, viewName, docId);
 
-      const atomic = this.#kv.atomic();
-
-      // Delete old emitted rows
-      const existing = await this.#kv.get<Deno.KvKey[]>(refKey);
-      if (existing.value) {
-        for (const key of existing.value) {
-          atomic.delete(key);
-        }
+      // Delete the existing refs for this document
+      const refs = await this.#kv.get<Deno.KvKey[]>(refKey);
+      for (const key of refs.value ?? []) {
+        atomic.delete(key);
       }
 
       // If the doc was deleted, then we can stop here.
       if (doc === null) {
         atomic.delete(refKey);
-        await atomic.commit();
         continue;
       }
 
+      // Run the new document through the map function to update the view
       const emittedKeys: Deno.KvKey[] = [];
-
+      const viewPrefix = getViewKey(this.#namespace, viewName, signature);
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
         const viewKey = [...viewPrefix, ...keyParts, docId];
@@ -328,11 +295,13 @@ export class Cushion {
         atomic.set(viewKey, { value: value ?? null, doc });
       };
 
-      mapper(doc, emit);
-      atomic.set(refKey, emittedKeys);
+      map(doc, emit);
 
-      await atomic.commit();
+      // Save the new refs
+      atomic.set(refKey, emittedKeys);
     }
+
+    await atomic.commit();
   }
 
   async *query<T = MapRow | ReduceRow>(
@@ -346,7 +315,7 @@ export class Cushion {
       throw new Error(`View "${viewName}" not defined`);
     }
 
-    const viewPrefix = getViewKey(this.#namespace, viewName);
+    const viewPrefix = getViewKey(this.#namespace, viewName, viewDef.signature);
 
     // Build selector based on query type
     let selector: Deno.KvListSelector;
@@ -389,7 +358,7 @@ export class Cushion {
 
     const listOptions: Deno.KvListOptions = {
       reverse: params.descending,
-      limit: params.skip ? params.limit + params.skip : params.limit,
+      limit: params.skip ? (params.limit + params.skip) : params.limit,
     };
 
     const entries = this.#kv.list<ViewRow>(selector, listOptions);
@@ -399,6 +368,7 @@ export class Cushion {
       yield* this.#queryReduce<T>(
         entries,
         viewDef.reduce,
+        viewDef.signature,
         { viewName, ...params },
       );
       return;
@@ -412,43 +382,53 @@ export class Cushion {
         continue;
       }
 
-      const { value, doc } = entry.value;
+      const { value } = entry.value;
+      const id = entry.key.at(-1) as string;
+
+      const doc = {} as { doc?: StoredDocument };
+      if (params.includeDocs) {
+        const docKey = getDocumentKey(this.#namespace, id);
+        const document = await this.#kv.get<StoredDocument>(docKey);
+        doc.doc = document.value ?? undefined;
+      }
 
       yield {
         key: entry.key.slice(viewPrefix.length, -1),
-        id: entry.key.at(-1) as string,
+        id,
         value,
-        ...(params.includeDocs ? { doc } : {}),
+        ...doc,
       } as T;
     }
   }
 
   async *#queryReduce<T = ReduceRow>(
     entries: AsyncIterable<Deno.KvEntry<ViewRow>>,
-    reduceFn: ReduceFunction,
+    reduce: ReduceFunction,
+    signature: string,
     params: ReturnType<ViewQuery["getParams"]>,
   ): AsyncGenerator<T> {
-    const viewPrefix = getViewKey(this.#namespace, params.viewName);
-    const prefixLen = viewPrefix.length;
+    const viewPrefix = getViewKey(this.#namespace, params.viewName, signature);
     const groupLevel = "groupLevel" in params ? params.groupLevel : undefined;
+    const prefixLen = viewPrefix.length;
 
     // deno-lint-ignore no-explicit-any
     const groups = new Map<string, { keys: any[]; values: any[] }>();
 
     for await (const entry of entries) {
       const emittedKey = entry.key.slice(prefixLen, -1);
-      const docId = entry.key.at(-1) as string;
-
       const groupKey = groupLevel !== undefined
         ? JSON.stringify(
           groupLevel === 0 ? emittedKey : emittedKey.slice(0, groupLevel),
         )
         : "ALL";
 
-      const group = groups.get(groupKey) ?? { keys: [], values: [] };
-      group.keys.push([emittedKey, docId]);
-      group.values.push(entry.value);
-      groups.set(groupKey, group);
+      if (groups.has(groupKey) === false) {
+        groups.set(groupKey, { keys: [], values: [] });
+      }
+
+      const group = groups.get(groupKey)!;
+      group.keys.push(emittedKey);
+      group.values.push(entry.value.value);
     }
 
     let skipped = 0;
@@ -464,12 +444,9 @@ export class Cushion {
         break;
       }
 
-      const result = reduceFn(keys, values);
-
-      yield {
-        key: groupKey === "ALL" ? null : JSON.parse(groupKey),
-        value: result,
-      } as T;
+      const key = groupKey === "ALL" ? null : JSON.parse(groupKey);
+      const value = reduce(keys, values);
+      yield { key, value } as T;
 
       yielded += 1;
     }

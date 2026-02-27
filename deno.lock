@@ -1,30 +1,59 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@std/assert@*": "1.0.18",
-    "jsr:@std/assert@^1.0.17": "1.0.18",
-    "jsr:@std/encoding@*": "1.0.10",
+    "jsr:@deno/kv-utils@~0.1.4": "0.1.4",
+    "jsr:@kitsonk/kv-toolbox@0.30.0": "0.30.0",
+    "jsr:@std/assert@1": "1.0.19",
+    "jsr:@std/assert@1.0.19": "1.0.19",
+    "jsr:@std/assert@^1.0.17": "1.0.19",
+    "jsr:@std/bytes@1": "1.0.6",
+    "jsr:@std/crypto@1": "1.0.5",
+    "jsr:@std/encoding@1": "1.0.10",
+    "jsr:@std/encoding@1.0.10": "1.0.10",
+    "jsr:@std/encoding@^1.0.5": "1.0.10",
     "jsr:@std/internal@^1.0.12": "1.0.12",
-    "jsr:@std/testing@*": "1.0.17"
+    "jsr:@std/media-types@1": "1.1.0",
+    "jsr:@std/testing@1.0.17": "1.0.17",
+    "npm:@types/node@*": "24.2.0"
   },
   "jsr": {
-    "@std/assert@1.0.15": {
-      "integrity": "d64018e951dbdfab9777335ecdb000c0b4e3df036984083be219ce5941e4703b",
+    "@deno/kv-utils@0.1.4": {
+      "integrity": "119a768c8a9b1af76552b48e78457cd2fb38cc97c10b3a57cf65efe47ff9ca1a",
+      "dependencies": [
+        "jsr:@std/encoding@^1.0.5"
+      ]
+    },
+    "@kitsonk/kv-toolbox@0.30.0": {
+      "integrity": "708199acea43cb5a7f57580658c693a8eb2d70ad4e5b1b3074749df5595b0647",
+      "dependencies": [
+        "jsr:@deno/kv-utils",
+        "jsr:@std/assert@1",
+        "jsr:@std/bytes",
+        "jsr:@std/crypto",
+        "jsr:@std/encoding@1",
+        "jsr:@std/media-types"
+      ]
+    },
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
       "dependencies": [
         "jsr:@std/internal"
       ]
     },
-    "@std/assert@1.0.18": {
-      "integrity": "270245e9c2c13b446286de475131dc688ca9abcd94fc5db41d43a219b34d1c78",
-      "dependencies": [
-        "jsr:@std/internal"
-      ]
+    "@std/bytes@1.0.6": {
+      "integrity": "f6ac6adbd8ccd99314045f5703e23af0a68d7f7e58364b47d2c7f408aeb5820a"
+    },
+    "@std/crypto@1.0.5": {
+      "integrity": "0dcfbb319fe0bba1bd3af904ceb4f948cde1b92979ec1614528380ed308a3b40"
     },
     "@std/encoding@1.0.10": {
       "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
     },
     "@std/internal@1.0.12": {
       "integrity": "972a634fd5bc34b242024402972cd5143eac68d8dffaca5eaa4dba30ce17b027"
+    },
+    "@std/media-types@1.1.0": {
+      "integrity": "c9d093f0c05c3512932b330e3cc1fe1d627b301db33a4c2c2185c02471d6eaa4"
     },
     "@std/testing@1.0.17": {
       "integrity": "87bdc2700fa98249d48a17cd72413352d3d3680dcfbdb64947fd0982d6bbf681",
@@ -34,10 +63,23 @@
       ]
     }
   },
+  "npm": {
+    "@types/node@24.2.0": {
+      "integrity": "sha512-3xyG3pMCq3oYCNg7/ZP+E1ooTaGB4cG8JWRsqqOYQdbWNY4zbaV0Ennrd7stjiJEFZCaybcIgpTjJWHRfBSIDw==",
+      "dependencies": [
+        "undici-types"
+      ]
+    },
+    "undici-types@7.10.0": {
+      "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
+    }
+  },
   "workspace": {
     "dependencies": [
-      "jsr:@std/assert@*",
-      "jsr:@std/testing@*"
+      "jsr:@kitsonk/kv-toolbox@0.30.0",
+      "jsr:@std/assert@1.0.19",
+      "jsr:@std/encoding@1.0.10",
+      "jsr:@std/testing@1.0.17"
     ]
   }
 }
