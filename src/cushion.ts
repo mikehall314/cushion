@@ -315,10 +315,15 @@ export class Cushion {
       throw new Error(`View "${viewName}" not defined`);
     }
 
-    const viewPrefix = getViewKey(this.#namespace, viewName, viewDef.signature);
+    const design = getDesignKey(this.#namespace, viewDef.signature);
+    const { value: viewState } = await this.#kv.get<ViewState>(design);
+    if (viewState?.state === "building") {
+      await this.#waitForView(viewDef.signature);
+    }
 
     // Build selector based on query type
     let selector: Deno.KvListSelector;
+    const viewPrefix = getViewKey(this.#namespace, viewName, viewDef.signature);
 
     switch (params.type) {
       case "key":
@@ -449,6 +454,23 @@ export class Cushion {
       yield { key, value } as T;
 
       yielded += 1;
+    }
+  }
+
+  async #waitForView(signature: string): Promise<void> {
+    const design = getDesignKey(this.#namespace, signature);
+    const reader = this.#kv.watch<ViewState[]>([design]).getReader();
+
+    try {
+      while (true) {
+        const { value } = await reader.read();
+        const [entry] = value ?? [];
+        if (entry.value?.state === "ready") {
+          return;
+        }
+      }
+    } finally {
+      reader.cancel();
     }
   }
 }
