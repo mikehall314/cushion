@@ -1,0 +1,38 @@
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
+
+      - name: lint
+        run: deno lint
+
+      - name: test
+        run: deno test --unstable-kv
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
+
+      - name: publish
+        run: deno publish
