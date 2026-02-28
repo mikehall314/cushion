@@ -24,8 +24,18 @@ type ViewQueryParameters =
 
 type SortOrder = typeof ViewQuery.DESCENDING | typeof ViewQuery.ASCENDING;
 
+/**
+ * Builder class for constructing queries against a view.
+ */
 export class ViewQuery {
+  /**
+   * Sort descending. Pass to `order()` method to set sort order for the query.
+   */
   static readonly DESCENDING = Symbol("descending");
+
+  /**
+   * Sort ascending. Pass to `order()` method to set sort order for the query.
+   */
   static readonly ASCENDING = Symbol("ascending");
 
   #viewName: string;
@@ -49,6 +59,9 @@ export class ViewQuery {
     this.#viewName = viewName;
   }
 
+  /**
+   * Start a new query against a view
+   */
   static for(viewName: string): ViewQuery {
     return new ViewQuery(viewName);
   }
@@ -87,6 +100,9 @@ export class ViewQuery {
     return this;
   }
 
+  /**
+   * Query by document ID range within a key range
+   */
   idRange(startId: string, endId: string): this {
     this.#startKeyDocId = startId;
     this.#endKeyDocId = endId;

@@ -38,14 +38,36 @@ export type MapRow<
   TValue = unknown,
   TDoc extends StoredDocument = StoredDocument,
 > = {
+  /**
+   * The emitted key
+   */
   key: Deno.KvKeyPart[];
-  id: string;
+
+  /**
+   * The emitted value
+   */
   value: TValue;
+
+  /**
+   * The document ID
+   */
+
+  id: string;
+  /**
+   * The full document, if requested
+   */
   doc?: TDoc;
 };
 
 export type ReduceRow<TValue = unknown> = {
+  /**
+   * The group key, or null if not grouped
+   */
   key: Deno.KvKeyPart[] | null;
+
+  /**
+   * The reduced value
+   */
   value: TValue;
 };
 
@@ -56,14 +78,17 @@ export class Cushion {
 
   /**
    * Open a Cushion database
-   * @param namespace - Namespace for data isolation (default: "default")
-   * @param kv - Optional Deno.Kv instance (will create one if not provided)
+   * @param namespace Namespace for data isolation (default: "default")
+   * @param kv Optional Deno.Kv instance (will open one if not provided)
    */
   static async open(namespace = "default", kv?: Deno.Kv): Promise<Cushion> {
     const kvInstance = kv ?? await Deno.openKv();
     return new Cushion(kvInstance, namespace);
   }
 
+  /**
+   * Close the database connection
+   */
   close(): void {
     this.#kv.close();
   }
@@ -74,8 +99,9 @@ export class Cushion {
   }
 
   /**
-   * Get a document by ID
-   * Returns null if document doesn't exist
+   * Get a document by its ID
+   * @param id Document ID to get
+   * @returns Specified document, or null if not found
    */
   async get<T extends Document>(id: string): Promise<T | null> {
     const key = getDocumentKey(this.#namespace, id);
@@ -95,6 +121,7 @@ export class Cushion {
    * Insert a document into the database
    * If doc has _id, use it; otherwise generate one
    * Returns the inserted document with _id and _rev
+   * @param doc New document to create
    */
   async insert<T extends MaybeDocument>(doc: T): Promise<InsertResult> {
     // Generate ID if not provided
@@ -129,7 +156,9 @@ export class Cushion {
 
   /**
    * Replace an existing document
-   * Requires matching rev for optimistic locking
+   * @param id Document ID to replace
+   * @param rev Current document revision
+   * @param doc New document
    */
   async replace<T extends MaybeDocument>(
     id: string,
@@ -165,7 +194,8 @@ export class Cushion {
 
   /**
    * Remove a document
-   * Requires matching rev for optimistic locking
+   * @param id Document ID to remove
+   * @param rev Current document revision
    */
   async remove(id: string, rev: string): Promise<{ ok: boolean }> {
     const key = getDocumentKey(this.#namespace, id);
@@ -196,7 +226,10 @@ export class Cushion {
 
   /**
    * Define a view with a map function and optional reduce function
-   * Automatically rebuilds if the map function has changed
+   * Automatically rebuilds if the map function has changed.
+   * @param viewName Name of the view to define
+   * @param map Map function to generate view entries
+   * @param reduce Optional reduce function to aggregate view results. Runs at query time.
    */
   async defineView(
     viewName: string,
@@ -304,10 +337,14 @@ export class Cushion {
     await atomic.commit();
   }
 
-  async *query<T = MapRow | ReduceRow>(
-    viewQuery: ViewQuery,
-  ): AsyncGenerator<T> {
-    const { viewName, ...params } = viewQuery.getParams();
+  /**
+   * Perform a query on a view.
+   * Returns an async generator that yields results as they are read from the
+   * database.
+   * @param query ViewQuery object specifying the query parameters
+   */
+  async *query<T = MapRow | ReduceRow>(query: ViewQuery): AsyncGenerator<T> {
+    const { viewName, ...params } = query.getParams();
 
     // Check the view exists
     const viewDef = this.#views.get(viewName);
@@ -397,12 +434,8 @@ export class Cushion {
         doc.doc = document.value ?? undefined;
       }
 
-      yield {
-        key: entry.key.slice(viewPrefix.length, -1),
-        id,
-        value,
-        ...doc,
-      } as T;
+      const key = entry.key.slice(viewPrefix.length, -1);
+      yield { key, id, value, ...doc } as T;
     }
   }
 
@@ -457,6 +490,8 @@ export class Cushion {
     }
   }
 
+  // Wait for a view to finish building. This could be slow if you have
+  // a lot of documents
   async #waitForView(signature: string): Promise<void> {
     const design = getDesignKey(this.#namespace, signature);
     const reader = this.#kv.watch<ViewState[]>([design]).getReader();
