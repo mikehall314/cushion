@@ -319,19 +319,19 @@ export class Cushion {
       }
 
       // Run the new document through the map function to update the view
-      const emittedKeys: Deno.KvKey[] = [];
+      const newRefs: Deno.KvKey[] = [];
       const viewPrefix = getViewKey(this.#namespace, viewName, signature);
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
         const viewKey = [...viewPrefix, ...keyParts, docId];
-        emittedKeys.push(viewKey);
+        newRefs.push(viewKey);
         atomic.set(viewKey, { value: value ?? null });
       };
 
       map(doc, emit);
 
       // Save the new refs
-      atomic.set(refKey, emittedKeys);
+      atomic.set(refKey, newRefs);
     }
 
     await atomic.commit();
