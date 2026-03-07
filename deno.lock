@@ -74,6 +74,13 @@
       "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
     }
   },
+  "redirects": {
+    "https://esm.sh/@types/lodash-es@~4.17.12/index.d.ts": "https://esm.sh/@types/lodash-es@4.17.12/index.d.ts"
+  },
+  "remote": {
+    "https://esm.sh/lodash-es@4.17.21": "1252ccd86311d14f2dd05282cf3e40e1ff76bfa79c71ca49b903e902129944cb",
+    "https://esm.sh/lodash-es@4.17.21/denonext/lodash-es.mjs": "6f7d7db2f829218b6a787d9652b7e90333a1b89e5eb3a8b4c4b9eb6de3b062ec"
+  },
   "workspace": {
     "dependencies": [
       "jsr:@kitsonk/kv-toolbox@0.30.0",

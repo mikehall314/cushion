@@ -19,6 +19,18 @@ async function collect<T>(gen: AsyncIterable<T>): Promise<T[]> {
   return results;
 }
 
+type TestDoc = {
+  _id: string;
+  _rev: string;
+  type: string;
+  name: string;
+  department: string;
+  age: number;
+  tags: string[];
+};
+
+type RawDoc = Omit<TestDoc, "_id" | "_rev">;
+
 describe("Cushion API", () => {
   let db: Cushion;
 
@@ -66,7 +78,7 @@ describe("Cushion API", () => {
       });
       const doc = await db.get(id);
       assert(doc);
-      assertObjectMatch(doc, { _id: "alice", name: "Alice", _rev: rev });
+      assertObjectMatch(doc, { _id: "alice", _rev: rev, name: "Alice" });
     });
 
     it("returns null for missing document", async () => {
@@ -89,7 +101,7 @@ describe("Cushion API", () => {
       assert(result.ok);
       assertNotEquals(result.rev, rev);
 
-      const doc = await db.get(id);
+      const doc = await db.get<TestDoc>(id);
       assert(doc);
       assertEquals(doc.name, "Alice Updated");
     });
@@ -149,7 +161,7 @@ describe("Cushion API", () => {
       await db.insert({ _id: "alice", type: "user", name: "Alice", age: 32 });
       await db.insert({ _id: "bob", type: "user", name: "Bob", age: 25 });
 
-      await db.defineView("by-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -179,7 +191,7 @@ describe("Cushion API", () => {
 
   describe("incremental view updates", () => {
     beforeEach(async () => {
-      await db.defineView("by-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -235,7 +247,7 @@ describe("Cushion API", () => {
 
   describe("query", () => {
     beforeEach(async () => {
-      await db.defineView("by-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -271,7 +283,7 @@ describe("Cushion API", () => {
 
     describe("prefix", () => {
       it("returns rows matching prefix", async () => {
-        await db.defineView("by-dept-name", (doc, emit) => {
+        await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
           if (doc.type !== "user" || !doc.department) {
             return;
           }
@@ -358,7 +370,7 @@ describe("Cushion API", () => {
 
     describe("includeDocs", () => {
       it("includes full document when enabled", async () => {
-        await db.defineView("by-name", (doc, emit) => {
+        await db.defineView<RawDoc>("by-name", (doc, emit) => {
           if (doc.type !== "doc-user") {
             return;
           }
@@ -380,7 +392,7 @@ describe("Cushion API", () => {
         assertEquals(rows.length, 1);
 
         const row = rows[0] as any;
-        assertObjectMatch(row.doc, { _id: "alice", name: "Alice", age: 32 });
+        assertObjectMatch(row.doc, { name: "Alice", age: 32 });
       });
 
       it("omits doc when not enabled", async () => {
@@ -407,7 +419,7 @@ describe("Cushion API", () => {
 
   describe("reduce", () => {
     beforeEach(async () => {
-      await db.defineView(
+      await db.defineView<RawDoc>(
         "by-dept",
         (doc, emit) => {
           if (doc.type !== "user") {
@@ -451,7 +463,7 @@ describe("Cushion API", () => {
     });
 
     it("groups by level with group(n)", async () => {
-      await db.defineView("by-dept-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -484,7 +496,7 @@ describe("Cushion API", () => {
 
   describe("pagination with startKeyDocId", () => {
     it("paginates without overlap using skip(1)", async () => {
-      await db.defineView("by-dept", (doc, emit) => {
+      await db.defineView<RawDoc>("by-dept", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -550,7 +562,7 @@ describe("Cushion API", () => {
 
   describe("compound keys", () => {
     it("emits and queries compound keys", async () => {
-      await db.defineView("by-dept-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -582,7 +594,7 @@ describe("Cushion API", () => {
 
   describe("emit values", () => {
     it("returns emitted value", async () => {
-      await db.defineView("ages", (doc, emit) => {
+      await db.defineView<RawDoc>("ages", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -601,7 +613,7 @@ describe("Cushion API", () => {
 
   describe("multi-emit", () => {
     it("indexes all emitted distinct keys for a single doc", async () => {
-      await db.defineView("by-tag", (doc, emit) => {
+      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -615,7 +627,7 @@ describe("Cushion API", () => {
     });
 
     it("indexes duplicate emitted keys for a single doc", async () => {
-      await db.defineView("by-tag", (doc, emit) => {
+      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -629,7 +641,7 @@ describe("Cushion API", () => {
     });
 
     it("cleans up all emitted keys on replace, including duplicates", async () => {
-      await db.defineView("by-tag", (doc, emit) => {
+      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -646,7 +658,7 @@ describe("Cushion API", () => {
     });
 
     it("cleans up all emitted keys on delete, including duplicates", async () => {
-      await db.defineView("by-tag", (doc, emit) => {
+      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -662,7 +674,7 @@ describe("Cushion API", () => {
     });
 
     it("two docs emitting the same key both appear", async () => {
-      await db.defineView("by-tag", (doc, emit) => {
+      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -679,7 +691,7 @@ describe("Cushion API", () => {
 
   describe("view filtering", () => {
     it("excludes docs not matching view filter", async () => {
-      await db.defineView("by-name", (doc, emit) => {
+      await db.defineView<RawDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }

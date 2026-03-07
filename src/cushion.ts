@@ -4,6 +4,7 @@
 
 import type { ViewQuery } from "./view-query.ts";
 import { encodeHex } from "hex";
+import { omit } from "lodash";
 import { batchedAtomic } from "batched-atomic";
 import {
   getDesignKey,
@@ -14,29 +15,26 @@ import {
   getViewRefPrefix,
 } from "./utils.ts";
 
-// deno-lint-ignore no-explicit-any
-type Document = { _id: string; _rev: string; [key: string]: any };
-// deno-lint-ignore no-explicit-any
-type StoredDocument = { _id: string; [key: string]: any };
-type MaybeDocument = Partial<Document>;
+export type IdentifiedDocument = { _id: string; _rev: string };
+export type RawDocument = Omit<IdentifiedDocument, "_id" | "_rev">;
+export type NewDocument = RawDocument & { _id?: string };
+
 type ViewEmitKey = Deno.KvKeyPart | Deno.KvKeyPart[];
 type ViewEmitter = (key: ViewEmitKey, value?: unknown) => void;
-type MapFunction = (doc: StoredDocument, emit: ViewEmitter) => void;
-// deno-lint-ignore no-explicit-any
-type ReduceFunction = (keys: Deno.KvKeyPart[][], values: any[]) => unknown;
-type ViewLogic = {
-  map: MapFunction;
-  reduce?: ReduceFunction;
+type MapFunction<T> = (doc: T, emit: ViewEmitter) => void;
+type ReduceFunction<T> = (keys: Deno.KvKeyPart[][], values: T[]) => unknown;
+type ViewState = { signature: string; state: "building" | "ready" };
+type ViewRow = { value: unknown; doc: RawDocument };
+type InsertResult = { ok: boolean; id: string; rev: string };
+type ViewLogic<TDoc, TValue = unknown> = {
+  map: MapFunction<TDoc>;
+  reduce?: ReduceFunction<TValue>;
   signature: string;
 };
-type ViewState = { signature: string; state: "building" | "ready" };
-type ViewRow = { value: unknown; doc: StoredDocument };
-
-type InsertResult = { ok: boolean; id: string; rev: string };
 
 export type MapRow<
   TValue = unknown,
-  TDoc extends StoredDocument = StoredDocument,
+  TDoc extends RawDocument = RawDocument,
 > = {
   /**
    * The emitted key
@@ -74,7 +72,7 @@ export type ReduceRow<TValue = unknown> = {
 export class Cushion {
   #kv: Deno.Kv;
   #namespace: string;
-  #views = new Map<string, ViewLogic>();
+  #views = new Map<string, ViewLogic<RawDocument>>();
 
   /**
    * Open a Cushion database
@@ -83,7 +81,12 @@ export class Cushion {
    */
   static async open(namespace = "default", kv?: Deno.Kv): Promise<Cushion> {
     const kvInstance = kv ?? await Deno.openKv();
-    return new Cushion(kvInstance, namespace);
+    return new Cushion(namespace, kvInstance);
+  }
+
+  private constructor(namespace: string, kv: Deno.Kv) {
+    this.#kv = kv;
+    this.#namespace = namespace;
   }
 
   /**
@@ -93,17 +96,12 @@ export class Cushion {
     this.#kv.close();
   }
 
-  private constructor(kv: Deno.Kv, namespace: string) {
-    this.#kv = kv;
-    this.#namespace = namespace;
-  }
-
   /**
    * Get a document by its ID
    * @param id Document ID to get
    * @returns Specified document, or null if not found
    */
-  async get<T extends Document>(id: string): Promise<T | null> {
+  async get<T extends IdentifiedDocument>(id: string): Promise<T | null> {
     const key = getDocumentKey(this.#namespace, id);
     const result = await this.#kv.get<T>(key);
 
@@ -111,10 +109,7 @@ export class Cushion {
       return null;
     }
 
-    return {
-      ...result.value,
-      _rev: result.versionstamp,
-    };
+    return { ...result.value, _id: id, _rev: result.versionstamp };
   }
 
   /**
@@ -123,7 +118,7 @@ export class Cushion {
    * Returns the inserted document with _id and _rev
    * @param doc New document to create
    */
-  async insert<T extends MaybeDocument>(doc: T): Promise<InsertResult> {
+  async insert<T extends NewDocument>(doc: T): Promise<InsertResult> {
     // Generate ID if not provided
     const id = doc._id || crypto.randomUUID();
 
@@ -134,7 +129,7 @@ export class Cushion {
     }
 
     const key = getDocumentKey(this.#namespace, id);
-    const initialiser = { ...doc, _id: id };
+    const initialiser = omit(doc, "_id");
 
     // Create a new document only if it doesn't already exist
     const result = await this.#kv.atomic()
@@ -146,10 +141,7 @@ export class Cushion {
       throw new Error(`Document ${id} already exists; use replace()`);
     }
 
-    await this.#updateViewsForDoc(id, {
-      ...initialiser,
-      _rev: result.versionstamp,
-    });
+    await this.#updateViewsForDoc(id, initialiser);
 
     return { ok: true, id, rev: result.versionstamp };
   }
@@ -160,17 +152,16 @@ export class Cushion {
    * @param rev Current document revision
    * @param doc New document
    */
-  async replace<T extends MaybeDocument>(
+  async replace<T extends NewDocument>(
     id: string,
     rev: string,
     doc: T,
   ): Promise<InsertResult> {
     const key = getDocumentKey(this.#namespace, id);
 
-    // Ensure the document includes the _id and omits the _rev,
-    // which is stored as the versionstamp in Deno KV.
-    const { _rev, ...rest } = doc;
-    const updated: StoredDocument = { ...rest, _id: id };
+    // Exclude the _id and _rev from the stored document, since they are
+    // derived from the key and versionstamp.
+    const updated = omit(doc, ["_id", "_rev"]);
 
     // Update the document only if the rev matches
     const result = await this.#kv.atomic()
@@ -184,10 +175,7 @@ export class Cushion {
       );
     }
 
-    await this.#updateViewsForDoc(id, {
-      ...updated,
-      _rev: result.versionstamp,
-    });
+    await this.#updateViewsForDoc(id, updated);
 
     return { ok: true, id, rev: result.versionstamp };
   }
@@ -197,7 +185,7 @@ export class Cushion {
    * @param id Document ID to remove
    * @param rev Current document revision
    */
-  async remove(id: string, rev: string): Promise<{ ok: boolean }> {
+  async remove(id: string, rev: string): Promise<{ ok: true }> {
     const key = getDocumentKey(this.#namespace, id);
 
     // Remove only if the user knows the current rev
@@ -216,7 +204,7 @@ export class Cushion {
     return { ok: true };
   }
 
-  async #hashFunction(fn: MapFunction): Promise<string> {
+  async #hashFunction(fn: MapFunction<never>): Promise<string> {
     const buffer = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(fn.toString()),
@@ -231,14 +219,18 @@ export class Cushion {
    * @param map Map function to generate view entries
    * @param reduce Optional reduce function to aggregate view results. Runs at query time.
    */
-  async defineView(
+  async defineView<TDoc extends RawDocument, TReduceValue = unknown>(
     viewName: string,
-    map: MapFunction,
-    reduce?: ReduceFunction,
+    map: MapFunction<TDoc>,
+    reduce?: ReduceFunction<TReduceValue>,
   ): Promise<void> {
     // Store the map-reduce logic so we can do incremental updates later
     const signature = await this.#hashFunction(map);
-    this.#views.set(viewName, { map, reduce, signature });
+    this.#views.set(viewName, {
+      map: map as MapFunction<unknown>,
+      reduce: reduce as ReduceFunction<unknown> | undefined,
+      signature,
+    });
 
     // If this view is already indexed/being indexed, we dont need to repeat it.
     const design = getDesignKey(this.#namespace, signature);
@@ -251,9 +243,9 @@ export class Cushion {
     await this.#rebuildView(viewName, map, signature);
   }
 
-  async #rebuildView(
+  async #rebuildView<T extends RawDocument>(
     viewName: string,
-    map: MapFunction,
+    map: MapFunction<T>,
     signature: string,
   ): Promise<void> {
     // We are building this view
@@ -276,20 +268,21 @@ export class Cushion {
 
     // Map over all the documents in the database and emit new view entries
     const prefix = getDocPrefix(this.#namespace);
-    const docs = this.#kv.list<Document>({ prefix });
-    for await (const { value: doc } of docs) {
+    const docs = this.#kv.list<T>({ prefix });
+    for await (const { key, value: doc } of docs) {
       const refs: Deno.KvKey[] = [];
+      const id = key.at(-2) as string;
 
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
-        const viewKey = [...viewPrefix, ...keyParts, doc._id, refs.length];
+        const viewKey = [...viewPrefix, ...keyParts, id, refs.length];
         refs.push(viewKey);
         atomic.set(viewKey, { value: value ?? null });
       };
 
       map(doc, emit);
 
-      const refKey = getViewRefKey(this.#namespace, viewName, doc._id);
+      const refKey = getViewRefKey(this.#namespace, viewName, id);
       atomic.set(refKey, refs);
     }
 
@@ -300,7 +293,10 @@ export class Cushion {
     await atomic.commit();
   }
 
-  async #updateViewsForDoc(docId: string, doc: Document | null): Promise<void> {
+  async #updateViewsForDoc<T extends RawDocument>(
+    docId: string,
+    doc: T | null,
+  ): Promise<void> {
     const atomic = batchedAtomic(this.#kv);
 
     for (const [viewName, { map, signature }] of this.#views) {
@@ -328,7 +324,7 @@ export class Cushion {
         atomic.set(viewKey, { value: value ?? null });
       };
 
-      map(doc, emit);
+      (map as MapFunction<T>)(doc, emit);
 
       // Save the new refs
       atomic.set(refKey, newRefs);
@@ -427,10 +423,10 @@ export class Cushion {
       const { value } = entry.value;
       const id = entry.key.at(-2) as string;
 
-      const doc = {} as { doc?: StoredDocument };
+      const doc = {} as { doc?: RawDocument };
       if (params.includeDocs) {
         const docKey = getDocumentKey(this.#namespace, id);
-        const document = await this.#kv.get<StoredDocument>(docKey);
+        const document = await this.#kv.get<RawDocument>(docKey);
         doc.doc = document.value ?? undefined;
       }
 
@@ -441,7 +437,7 @@ export class Cushion {
 
   async *#queryReduce<T = ReduceRow>(
     entries: AsyncIterable<Deno.KvEntry<ViewRow>>,
-    reduce: ReduceFunction,
+    reduce: ReduceFunction<T>,
     signature: string,
     params: ReturnType<ViewQuery["getParams"]>,
   ): AsyncGenerator<T> {

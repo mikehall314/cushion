@@ -7,6 +7,7 @@
     "@std/assert": "jsr:@std/assert@1.0.19",
     "batched-atomic": "jsr:@kitsonk/kv-toolbox@0.30.0/batched_atomic",
     "bdd": "jsr:@std/testing@1.0.17/bdd",
-    "hex": "jsr:@std/encoding@1.0.10/hex"
+    "hex": "jsr:@std/encoding@1.0.10/hex",
+    "lodash": "https://esm.sh/lodash-es@4.17.21"
   }
 }
