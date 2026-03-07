@@ -325,7 +325,7 @@ export class Cushion {
         const keyParts = Array.isArray(key) ? key : [key];
         const viewKey = [...viewPrefix, ...keyParts, docId];
         emittedKeys.push(viewKey);
-        atomic.set(viewKey, { value: value ?? null, doc });
+        atomic.set(viewKey, { value: value ?? null });
       };
 
       map(doc, emit);
