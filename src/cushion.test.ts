@@ -597,6 +597,84 @@ describe("Cushion API", () => {
     });
   });
 
+  // --- Multi-emit ---
+
+  describe("multi-emit", () => {
+    it("indexes all emitted distinct keys for a single doc", async () => {
+      await db.defineView("by-tag", (doc, emit) => {
+        if (doc.type !== "post") return;
+        for (const tag of doc.tags ?? []) emit(tag);
+      });
+
+      await db.insert({ type: "post", tags: ["a", "b", "c"] });
+
+      const rows = await collect(db.query(ViewQuery.for("by-tag")));
+      assertEquals(rows.length, 3);
+      const keys = rows.map((r: any) => r.key[0]).sort();
+      assertEquals(keys, ["a", "b", "c"]);
+    });
+
+    it("indexes duplicate emitted keys for a single doc", async () => {
+      await db.defineView("by-tag", (doc, emit) => {
+        if (doc.type !== "post") return;
+        for (const tag of doc.tags ?? []) emit(tag);
+      });
+
+      await db.insert({ type: "post", tags: ["a", "a", "b"] });
+
+      const rows = await collect(db.query(ViewQuery.for("by-tag")));
+      assertEquals(rows.length, 3);
+      const keys = rows.map((r: any) => r.key[0]).sort();
+      assertEquals(keys, ["a", "a", "b"]);
+    });
+
+    it("cleans up all emitted keys on replace, including duplicates", async () => {
+      await db.defineView("by-tag", (doc, emit) => {
+        if (doc.type !== "post") return;
+        for (const tag of doc.tags ?? []) emit(tag);
+      });
+
+      const { id, rev } = await db.insert({
+        type: "post",
+        tags: ["a", "a", "b"],
+      });
+      await db.replace(id, rev, { type: "post", tags: ["c"] });
+
+      const rows = await collect(db.query(ViewQuery.for("by-tag")));
+      assertEquals(rows.length, 1);
+      assertEquals((rows[0] as any).key[0], "c");
+    });
+
+    it("cleans up all emitted keys on delete, including duplicates", async () => {
+      await db.defineView("by-tag", (doc, emit) => {
+        if (doc.type !== "post") return;
+        for (const tag of doc.tags ?? []) emit(tag);
+      });
+
+      const { id, rev } = await db.insert({
+        type: "post",
+        tags: ["a", "a", "b"],
+      });
+      await db.remove(id, rev);
+
+      const rows = await collect(db.query(ViewQuery.for("by-tag")));
+      assertEquals(rows.length, 0);
+    });
+
+    it("two docs emitting the same key both appear", async () => {
+      await db.defineView("by-tag", (doc, emit) => {
+        if (doc.type !== "post") return;
+        for (const tag of doc.tags ?? []) emit(tag);
+      });
+
+      await db.insert({ type: "post", tags: ["a"] });
+      await db.insert({ type: "post", tags: ["a"] });
+
+      const rows = await collect(db.query(ViewQuery.for("by-tag").key("a")));
+      assertEquals(rows.length, 2);
+    });
+  });
+
   // --- Filtering ---
 
   describe("view filtering", () => {

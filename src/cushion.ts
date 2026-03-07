@@ -282,7 +282,7 @@ export class Cushion {
 
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
-        const viewKey = [...viewPrefix, ...keyParts, doc._id];
+        const viewKey = [...viewPrefix, ...keyParts, doc._id, refs.length];
         refs.push(viewKey);
         atomic.set(viewKey, { value: value ?? null });
       };
@@ -323,7 +323,7 @@ export class Cushion {
       const viewPrefix = getViewKey(this.#namespace, viewName, signature);
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];
-        const viewKey = [...viewPrefix, ...keyParts, docId];
+        const viewKey = [...viewPrefix, ...keyParts, docId, newRefs.length];
         newRefs.push(viewKey);
         atomic.set(viewKey, { value: value ?? null });
       };
@@ -425,7 +425,7 @@ export class Cushion {
       }
 
       const { value } = entry.value;
-      const id = entry.key.at(-1) as string;
+      const id = entry.key.at(-2) as string;
 
       const doc = {} as { doc?: StoredDocument };
       if (params.includeDocs) {
@@ -434,7 +434,7 @@ export class Cushion {
         doc.doc = document.value ?? undefined;
       }
 
-      const key = entry.key.slice(viewPrefix.length, -1);
+      const key = entry.key.slice(viewPrefix.length, -2);
       yield { key, id, value, ...doc } as T;
     }
   }
@@ -453,7 +453,7 @@ export class Cushion {
     const groups = new Map<string, { keys: any[]; values: any[] }>();
 
     for await (const entry of entries) {
-      const emittedKey = entry.key.slice(prefixLen, -1);
+      const emittedKey = entry.key.slice(prefixLen, -2);
       const groupKey = groupLevel !== undefined
         ? JSON.stringify(
           groupLevel === 0 ? emittedKey : emittedKey.slice(0, groupLevel),
