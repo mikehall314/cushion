@@ -14,7 +14,8 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/media-types@1": "1.1.0",
     "jsr:@std/testing@1.0.17": "1.0.17",
-    "npm:@types/node@*": "24.2.0"
+    "npm:@types/node@*": "24.2.0",
+    "npm:lodash-es@4.17.21": "4.17.21"
   },
   "jsr": {
     "@deno/kv-utils@0.1.4": {
@@ -70,6 +71,9 @@
         "undici-types"
       ]
     },
+    "lodash-es@4.17.21": {
+      "integrity": "sha512-mKnC+QJ9pWVzv+C4/U3rRsHapFfHvQFoFB92e52xeyGMcX6/OlIl78je1u8vePzYZSkkogMPJ2yjxxsb89cxyw=="
+    },
     "undici-types@7.10.0": {
       "integrity": "sha512-t5Fy/nfn+14LuOc2KNYg75vZqClpAiqscVvMygNnlsHBFpSXdJaYtXMcdNLpl/Qvc3P2cB3s6lOV51nqsFq4ag=="
     }
@@ -86,7 +90,8 @@
       "jsr:@kitsonk/kv-toolbox@0.30.0",
       "jsr:@std/assert@1.0.19",
       "jsr:@std/encoding@1.0.10",
-      "jsr:@std/testing@1.0.17"
+      "jsr:@std/testing@1.0.17",
+      "npm:lodash-es@4.17.21"
     ]
   }
 }
