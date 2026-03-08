@@ -29,8 +29,6 @@ type TestDoc = {
   tags: string[];
 };
 
-type RawDoc = Omit<TestDoc, "_id" | "_rev">;
-
 describe("Cushion API", () => {
   let db: Cushion;
 
@@ -161,7 +159,7 @@ describe("Cushion API", () => {
       await db.insert({ _id: "alice", type: "user", name: "Alice", age: 32 });
       await db.insert({ _id: "bob", type: "user", name: "Bob", age: 25 });
 
-      await db.defineView<RawDoc>("by-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -191,7 +189,7 @@ describe("Cushion API", () => {
 
   describe("incremental view updates", () => {
     beforeEach(async () => {
-      await db.defineView<RawDoc>("by-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -247,7 +245,7 @@ describe("Cushion API", () => {
 
   describe("query", () => {
     beforeEach(async () => {
-      await db.defineView<RawDoc>("by-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -283,7 +281,7 @@ describe("Cushion API", () => {
 
     describe("prefix", () => {
       it("returns rows matching prefix", async () => {
-        await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
+        await db.defineView<TestDoc>("by-dept-name", (doc, emit) => {
           if (doc.type !== "user" || !doc.department) {
             return;
           }
@@ -370,7 +368,7 @@ describe("Cushion API", () => {
 
     describe("includeDocs", () => {
       it("includes full document when enabled", async () => {
-        await db.defineView<RawDoc>("by-name", (doc, emit) => {
+        await db.defineView<TestDoc>("by-name", (doc, emit) => {
           if (doc.type !== "doc-user") {
             return;
           }
@@ -430,7 +428,7 @@ describe("Cushion API", () => {
       });
 
       it("returns empty on scan when no docs match view filter", async () => {
-        await db.defineView<RawDoc>("by-post", (doc, emit) => {
+        await db.defineView<TestDoc>("by-post", (doc, emit) => {
           if (doc.type !== "post") return;
           emit(doc.type);
         });
@@ -459,7 +457,7 @@ describe("Cushion API", () => {
 
   describe("reduce", () => {
     beforeEach(async () => {
-      await db.defineView<RawDoc>(
+      await db.defineView<TestDoc>(
         "by-dept",
         (doc, emit) => {
           if (doc.type !== "user") {
@@ -503,7 +501,7 @@ describe("Cushion API", () => {
     });
 
     it("groups by level with group(n)", async () => {
-      await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-dept-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -536,7 +534,7 @@ describe("Cushion API", () => {
 
   describe("pagination with startKeyDocId", () => {
     it("paginates without overlap using skip(1)", async () => {
-      await db.defineView<RawDoc>("by-dept", (doc, emit) => {
+      await db.defineView<TestDoc>("by-dept", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -602,7 +600,7 @@ describe("Cushion API", () => {
 
   describe("compound keys", () => {
     it("emits and queries compound keys", async () => {
-      await db.defineView<RawDoc>("by-dept-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-dept-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -634,7 +632,7 @@ describe("Cushion API", () => {
 
   describe("emit values", () => {
     it("returns emitted value", async () => {
-      await db.defineView<RawDoc>("ages", (doc, emit) => {
+      await db.defineView<TestDoc>("ages", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }
@@ -653,7 +651,7 @@ describe("Cushion API", () => {
 
   describe("multi-emit", () => {
     it("indexes all emitted distinct keys for a single doc", async () => {
-      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
+      await db.defineView<TestDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -667,7 +665,7 @@ describe("Cushion API", () => {
     });
 
     it("indexes duplicate emitted keys for a single doc", async () => {
-      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
+      await db.defineView<TestDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -681,7 +679,7 @@ describe("Cushion API", () => {
     });
 
     it("cleans up all emitted keys on replace, including duplicates", async () => {
-      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
+      await db.defineView<TestDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -698,7 +696,7 @@ describe("Cushion API", () => {
     });
 
     it("cleans up all emitted keys on delete, including duplicates", async () => {
-      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
+      await db.defineView<TestDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -714,7 +712,7 @@ describe("Cushion API", () => {
     });
 
     it("two docs emitting the same key both appear", async () => {
-      await db.defineView<RawDoc>("by-tag", (doc, emit) => {
+      await db.defineView<TestDoc>("by-tag", (doc, emit) => {
         if (doc.type !== "post") return;
         for (const tag of doc.tags ?? []) emit(tag);
       });
@@ -731,7 +729,7 @@ describe("Cushion API", () => {
 
   describe("view filtering", () => {
     it("excludes docs not matching view filter", async () => {
-      await db.defineView<RawDoc>("by-name", (doc, emit) => {
+      await db.defineView<TestDoc>("by-name", (doc, emit) => {
         if (doc.type !== "user") {
           return;
         }

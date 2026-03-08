@@ -15,26 +15,29 @@ import {
   getViewRefPrefix,
 } from "./utils.ts";
 
-export type IdentifiedDocument = { _id: string; _rev: string };
-export type RawDocument = Omit<IdentifiedDocument, "_id" | "_rev">;
-export type NewDocument = RawDocument & { _id?: string };
-
+type IdentifiedDocument = { _id: string; _rev: string; [key: string]: unknown };
+type NewDocument = { _id?: string; [key: string]: unknown };
 type ViewEmitKey = Deno.KvKeyPart | Deno.KvKeyPart[];
 type ViewEmitter = (key: ViewEmitKey, value?: unknown) => void;
 type MapFunction<T> = (doc: T, emit: ViewEmitter) => void;
 type ReduceFunction<T> = (keys: Deno.KvKeyPart[][], values: T[]) => unknown;
 type ViewState = { signature: string; state: "building" | "ready" };
-type ViewRow = { value: unknown; doc: RawDocument };
+type ViewRow = { value: unknown; doc: IdentifiedDocument };
 type InsertResult = { ok: boolean; id: string; rev: string };
-type ViewLogic<TDoc, TValue = unknown> = {
+type ViewLogic<
+  TDoc extends IdentifiedDocument = IdentifiedDocument,
+  TValue = unknown,
+> = {
   map: MapFunction<TDoc>;
   reduce?: ReduceFunction<TValue>;
   signature: string;
 };
 
+export type Document<T extends object> = T & IdentifiedDocument;
+
 export type MapRow<
   TValue = unknown,
-  TDoc extends RawDocument = RawDocument,
+  TDoc extends IdentifiedDocument = IdentifiedDocument,
 > = {
   /**
    * The emitted key
@@ -72,7 +75,7 @@ export type ReduceRow<TValue = unknown> = {
 export class Cushion {
   #kv: Deno.Kv;
   #namespace: string;
-  #views = new Map<string, ViewLogic<RawDocument>>();
+  #views = new Map<string, ViewLogic>();
 
   /**
    * Open a Cushion database
@@ -227,7 +230,7 @@ export class Cushion {
    * @param map Map function to generate view entries
    * @param reduce Optional reduce function to aggregate view results. Runs at query time.
    */
-  async defineView<TDoc extends RawDocument, TReduceValue = unknown>(
+  async defineView<TDoc extends IdentifiedDocument, TReduceValue = unknown>(
     viewName: string,
     map: MapFunction<TDoc>,
     reduce?: ReduceFunction<TReduceValue>,
@@ -431,10 +434,10 @@ export class Cushion {
       const { value } = entry.value;
       const id = entry.key.at(-2) as string;
 
-      const doc = {} as { doc?: RawDocument };
+      const doc = {} as { doc?: IdentifiedDocument };
       if (params.includeDocs) {
         const docKey = getDocumentKey(this.#namespace, id);
-        const document = await this.#kv.get<RawDocument>(docKey);
+        const document = await this.#kv.get<IdentifiedDocument>(docKey);
         doc.doc = document.value ?? undefined;
       }
 
