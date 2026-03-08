@@ -141,7 +141,11 @@ export class Cushion {
       throw new Error(`Document ${id} already exists; use replace()`);
     }
 
-    await this.#updateViewsForDoc(id, initialiser);
+    await this.#updateViewsForDoc<IdentifiedDocument>(id, {
+      _id: id,
+      _rev: result.versionstamp,
+      ...initialiser,
+    });
 
     return { ok: true, id, rev: result.versionstamp };
   }
@@ -175,7 +179,11 @@ export class Cushion {
       );
     }
 
-    await this.#updateViewsForDoc(id, updated);
+    await this.#updateViewsForDoc<IdentifiedDocument>(id, {
+      _id: id,
+      _rev: result.versionstamp,
+      ...updated,
+    });
 
     return { ok: true, id, rev: result.versionstamp };
   }
@@ -199,7 +207,7 @@ export class Cushion {
       );
     }
 
-    await this.#updateViewsForDoc(id, null);
+    await this.#updateViewsForDoc<IdentifiedDocument>(id, null);
 
     return { ok: true };
   }
@@ -243,7 +251,7 @@ export class Cushion {
     await this.#rebuildView(viewName, map, signature);
   }
 
-  async #rebuildView<T extends RawDocument>(
+  async #rebuildView<T>(
     viewName: string,
     map: MapFunction<T>,
     signature: string,
@@ -269,7 +277,7 @@ export class Cushion {
     // Map over all the documents in the database and emit new view entries
     const prefix = getDocPrefix(this.#namespace);
     const docs = this.#kv.list<T>({ prefix });
-    for await (const { key, value: doc } of docs) {
+    for await (const { key, versionstamp: rev, value: doc } of docs) {
       const refs: Deno.KvKey[] = [];
       const id = key.at(-2) as string;
 
@@ -280,7 +288,7 @@ export class Cushion {
         atomic.set(viewKey, { value: value ?? null });
       };
 
-      map(doc, emit);
+      map({ _id: id, _rev: rev, ...doc }, emit);
 
       const refKey = getViewRefKey(this.#namespace, viewName, id);
       atomic.set(refKey, refs);
@@ -293,7 +301,7 @@ export class Cushion {
     await atomic.commit();
   }
 
-  async #updateViewsForDoc<T extends RawDocument>(
+  async #updateViewsForDoc<T>(
     docId: string,
     doc: T | null,
   ): Promise<void> {
