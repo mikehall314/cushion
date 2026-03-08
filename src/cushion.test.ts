@@ -413,6 +413,46 @@ describe("Cushion API", () => {
         "not defined",
       );
     });
+
+    describe("empty results", () => {
+      it("returns empty for key with no match", async () => {
+        const rows = await collect(
+          db.query(ViewQuery.for("by-name").key("Zara")),
+        );
+        assertEquals(rows.length, 0);
+      });
+
+      it("returns empty for range with no match", async () => {
+        const rows = await collect(
+          db.query(ViewQuery.for("by-name").range(["X"], ["Z"])),
+        );
+        assertEquals(rows.length, 0);
+      });
+
+      it("returns empty on scan when no docs match view filter", async () => {
+        await db.defineView<RawDoc>("by-post", (doc, emit) => {
+          if (doc.type !== "post") return;
+          emit(doc.type);
+        });
+
+        const rows = await collect(db.query(ViewQuery.for("by-post")));
+        assertEquals(rows.length, 0);
+      });
+
+      it("returns empty after all docs are removed", async () => {
+        const { id, rev } = await db.insert({
+          _id: "carol",
+          type: "user",
+          name: "Carol",
+        });
+        await db.remove(id, rev);
+
+        const rows = await collect(
+          db.query(ViewQuery.for("by-name").key("Carol")),
+        );
+        assertEquals(rows.length, 0);
+      });
+    });
   });
 
   // --- Reduce ---
