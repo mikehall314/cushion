@@ -282,7 +282,7 @@ export class Cushion {
     const docs = this.#kv.list<T>({ prefix });
     for await (const { key, versionstamp: rev, value: doc } of docs) {
       const refs: Deno.KvKey[] = [];
-      const id = key.at(-2) as string;
+      const id = key.at(-1) as string;
 
       const emit: ViewEmitter = (key, value) => {
         const keyParts = Array.isArray(key) ? key : [key];

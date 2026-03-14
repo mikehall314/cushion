@@ -185,6 +185,22 @@ describe("Cushion API", () => {
       // Should only have built the view once
       assertEquals(callCount, 1);
     });
+
+    it("correctly indexes documents inserted before view was defined", async () => {
+      await db.insert({ _id: "alice", type: "user", name: "Alice" });
+      await db.insert({ _id: "bob", type: "user", name: "Bob" });
+
+      await db.defineView<TestDoc>("by-name", (doc, emit) => {
+        if (doc.type !== "user") return;
+        emit(doc.name);
+      });
+
+      const rows = await collect(db.query(ViewQuery.for("by-name")));
+      assertEquals(rows.length, 2);
+
+      const ids = rows.map((r: any) => r.id).sort();
+      assertEquals(ids, ["alice", "bob"]);
+    });
   });
 
   describe("incremental view updates", () => {
